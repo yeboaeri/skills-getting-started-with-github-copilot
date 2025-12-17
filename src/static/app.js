@@ -18,11 +18,16 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   }
 
-  function createParticipantList(participants) {
+  function createParticipantList(activityName, participants) {
     if (!participants || participants.length === 0) {
       return '<p class="participant-empty">No participants yet.</p>';
     }
-    return `<ul class="participants">${participants.map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`;
+    return `<ul class="participants">${participants.map(p => `
+      <li class="participant-item">
+        <span class="participant-email">${escapeHtml(p)}</span>
+        <button class="remove-participant" data-activity="${escapeHtml(activityName)}" data-email="${escapeHtml(p)}" aria-label="Remove ${escapeHtml(p)}">✕</button>
+      </li>`).join('')}
+    </ul>`;
   }
 
   function renderActivities(data) {
@@ -36,7 +41,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <p class="desc">${escapeHtml(info.description)}</p>
         <p class="schedule"><strong>Schedule:</strong> ${escapeHtml(info.schedule)}</p>
         <p class="participant-count"><strong>Participants (${info.participants.length}):</strong></p>
-        ${createParticipantList(info.participants)}
+        ${createParticipantList(name, info.participants)}
       `;
       activitiesList.appendChild(card);
 
@@ -76,6 +81,34 @@ document.addEventListener("DOMContentLoaded", () => {
         fetchAndRender();
       })
       .catch(() => showMessage("Network error", "error"));
+  });
+
+  // Delegate click events for remove buttons
+  activitiesList.addEventListener('click', (e) => {
+    const btn = e.target.closest('.remove-participant');
+    if (!btn) return;
+
+    const activity = btn.getAttribute('data-activity');
+    const email = btn.getAttribute('data-email');
+
+    if (!activity || !email) return;
+
+    // Confirm before removing
+    if (!confirm(`Remove ${email} from ${activity}?`)) return;
+
+    fetch(`/activities/${encodeURIComponent(activity)}/participants?email=${encodeURIComponent(email)}`, {
+      method: 'DELETE'
+    })
+      .then(async r => {
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          showMessage(body.detail || 'Failed to remove participant', 'error');
+          return;
+        }
+        showMessage(body.message || 'Participant removed', 'success');
+        fetchAndRender();
+      })
+      .catch(() => showMessage('Network error', 'error'));
   });
 
   fetchAndRender();

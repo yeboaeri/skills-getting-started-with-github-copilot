@@ -1,86 +1,82 @@
 document.addEventListener("DOMContentLoaded", () => {
   const activitiesList = document.getElementById("activities-list");
   const activitySelect = document.getElementById("activity");
-  const signupForm = document.getElementById("signup-form");
-  const messageDiv = document.getElementById("message");
+  const form = document.getElementById("signup-form");
+  const messageEl = document.getElementById("message");
 
-  // Function to fetch activities from API
-  async function fetchActivities() {
-    try {
-      const response = await fetch("/activities");
-      const activities = await response.json();
-
-      // Clear loading message
-      activitiesList.innerHTML = "";
-
-      // Populate activities list
-      Object.entries(activities).forEach(([name, details]) => {
-        const activityCard = document.createElement("div");
-        activityCard.className = "activity-card";
-
-        const spotsLeft = details.max_participants - details.participants.length;
-
-        activityCard.innerHTML = `
-          <h4>${name}</h4>
-          <p>${details.description}</p>
-          <p><strong>Schedule:</strong> ${details.schedule}</p>
-          <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
-        `;
-
-        activitiesList.appendChild(activityCard);
-
-        // Add option to select dropdown
-        const option = document.createElement("option");
-        option.value = name;
-        option.textContent = name;
-        activitySelect.appendChild(option);
-      });
-    } catch (error) {
-      activitiesList.innerHTML = "<p>Failed to load activities. Please try again later.</p>";
-      console.error("Error fetching activities:", error);
-    }
+  function showMessage(text, type = "info") {
+    messageEl.textContent = text;
+    messageEl.className = `message ${type}`;
+    messageEl.classList.remove("hidden");
+    clearTimeout(messageEl._timer);
+    messageEl._timer = setTimeout(() => messageEl.classList.add("hidden"), 4000);
   }
 
-  // Handle form submission
-  signupForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
+  function escapeHtml(str = "") {
+    return String(str).replace(/[&<>"']/g, (m) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m])
+    );
+  }
 
-    const email = document.getElementById("email").value;
-    const activity = document.getElementById("activity").value;
-
-    try {
-      const response = await fetch(
-        `/activities/${encodeURIComponent(activity)}/signup?email=${encodeURIComponent(email)}`,
-        {
-          method: "POST",
-        }
-      );
-
-      const result = await response.json();
-
-      if (response.ok) {
-        messageDiv.textContent = result.message;
-        messageDiv.className = "success";
-        signupForm.reset();
-      } else {
-        messageDiv.textContent = result.detail || "An error occurred";
-        messageDiv.className = "error";
-      }
-
-      messageDiv.classList.remove("hidden");
-
-      // Hide message after 5 seconds
-      setTimeout(() => {
-        messageDiv.classList.add("hidden");
-      }, 5000);
-    } catch (error) {
-      messageDiv.textContent = "Failed to sign up. Please try again.";
-      messageDiv.className = "error";
-      messageDiv.classList.remove("hidden");
-      console.error("Error signing up:", error);
+  function createParticipantList(participants) {
+    if (!participants || participants.length === 0) {
+      return '<p class="participant-empty">No participants yet.</p>';
     }
+    return `<ul class="participants">${participants.map(p => `<li>${escapeHtml(p)}</li>`).join('')}</ul>`;
+  }
+
+  function renderActivities(data) {
+    activitiesList.innerHTML = "";
+    activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
+    Object.entries(data).forEach(([name, info]) => {
+      const card = document.createElement("div");
+      card.className = "activity-card";
+      card.innerHTML = `
+        <h4>${escapeHtml(name)}</h4>
+        <p class="desc">${escapeHtml(info.description)}</p>
+        <p class="schedule"><strong>Schedule:</strong> ${escapeHtml(info.schedule)}</p>
+        <p class="participant-count"><strong>Participants (${info.participants.length}):</strong></p>
+        ${createParticipantList(info.participants)}
+      `;
+      activitiesList.appendChild(card);
+
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      activitySelect.appendChild(opt);
+    });
+  }
+
+  function fetchAndRender() {
+    fetch("/activities")
+      .then(r => { if (!r.ok) throw new Error("Failed to load activities"); return r.json(); })
+      .then(renderActivities)
+      .catch(err => showMessage(err.message || "Unable to load activities", "error"));
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const email = document.getElementById("email").value.trim();
+    const activity = document.getElementById("activity").value;
+    if (!email || !activity) {
+      showMessage("Please provide an email and select an activity", "error");
+      return;
+    }
+    fetch(`/activities/${encodeURIComponent(activity)}/signup?email=${encodeURIComponent(email)}`, {
+      method: "POST"
+    })
+      .then(async r => {
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          showMessage(body.detail || "Signup failed", "error");
+          return;
+        }
+        showMessage(body.message || "Signed up successfully", "success");
+        form.reset();
+        fetchAndRender();
+      })
+      .catch(() => showMessage("Network error", "error"));
   });
 
-  // Initialize app
-  fetchActivities();
+  fetchAndRender();
 });
